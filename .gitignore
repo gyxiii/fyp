@@ -1,0 +1,22 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.numba_cache/
+.pytest_cache/
+
+# Project data (AIST++ derived; not redistributable, see data/README.md)
+data/*
+!data/README.md
+
+# Generated runs, renders and exports
+outputs/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.bak
+*.log

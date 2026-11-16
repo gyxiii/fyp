@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "description": "Explicit, user-editable music-to-motion mapping rules. Every number here is inspected and can be changed in the interactive interface.",
+  "fps": 30,
+  "mode": "multi_level",
+  "slot_beats": 2,
+  "tempo": {
+    "enabled": true,
+    "ref_bpm": 120.0,
+    "min_bpm": 60.0,
+    "max_bpm": 180.0,
+    "weight": 0.55,
+    "exponent": 1.0,
+    "min_rate": 0.75,
+    "max_rate": 1.40
+  },
+  "energy": {
+    "enabled": true,
+    "min_gain": 0.55,
+    "max_gain": 1.45,
+    "weight": 0.75
+  },
+  "onset": {
+    "enabled": true,
+    "min_blend": 0.08,
+    "max_blend": 0.40,
+    "default_blend": 0.30
+  },
+  "structure": {
+    "enabled": true,
+    "class_labels": ["calm", "mid", "energetic"],
+    "strict": false
+  },
+  "selection": {
+    "diversity_penalty": 0.15,
+    "genre_penalty": 0.10,
+    "rhythmicity_weight": 0.20,
+    "jitter": 0.01,
+    "min_pool": 12,
+    "memory_slots": 6
+  },
+  "blend": {
+    "mode": "slerp",
+    "dtw": true,
+    "foot_lock": true,
+    "root_anchor": 0.45,
+    "max_blend_seconds": 0.5
+  },
+  "output": {
+    "resolution": [1280, 720],
+    "camera": "medium"
+  }
+}
