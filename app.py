@@ -71,6 +71,7 @@ html, body, .stApp, [data-testid="stAppViewContainer"] {
     font-family: 'Manrope', -apple-system, 'Segoe UI', system-ui, sans-serif;
     color: var(--ink);
     -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
 }
 
 [data-testid="stAppViewContainer"] {
@@ -84,7 +85,7 @@ html, body, .stApp, [data-testid="stAppViewContainer"] {
 [data-testid="stHeader"] { background: transparent; }
 
 .block-container {
-    max-width: 1180px;
+    max-width: 1080px;
     padding-top: 1.5rem;
     padding-bottom: 4.5rem;
 }
@@ -475,6 +476,55 @@ def render_video(run_dir: Path, audio_path: Path, mode: str) -> Path | None:
     return output
 
 
+RUNS_DIR = PROJECT_DIR / "outputs" / "runs"
+EXPERIMENTS_DIR = PROJECT_DIR / "outputs" / "experiments"
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def load_runs() -> pd.DataFrame:
+    """One row per recorded run (newest first)."""
+    rows = []
+    if RUNS_DIR.exists():
+        for run_dir in sorted(RUNS_DIR.iterdir(), key=lambda path: path.stat().st_mtime, reverse=True):
+            metrics_path = run_dir / "metrics.json"
+            if not metrics_path.exists():
+                continue
+            try:
+                metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            mode = ""
+            summary_path = run_dir / "mapping_summary.json"
+            if summary_path.exists():
+                try:
+                    mode = json.loads(summary_path.read_text(encoding="utf-8")).get("mode", "")
+                except Exception:
+                    mode = ""
+            rows.append({
+                "run": run_dir.name,
+                "mode": mode or metrics.get("mode", ""),
+                "bas": metrics.get("bas"),
+                "beat_f1": metrics.get("beat_f1"),
+                "energy_corr": metrics.get("energy_corr"),
+                "clip_variety": metrics.get("clip_variety"),
+                "slots": metrics.get("slots"),
+                "video": any(run_dir.glob("character_*.mp4")),
+                "modified": datetime.fromtimestamp(run_dir.stat().st_mtime).strftime("%Y-%m-%d %H:%M"),
+            })
+    return pd.DataFrame(rows)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def library_frame() -> pd.DataFrame:
+    return pd.read_csv(paths.LIBRARY_INDEX_PATH)
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def experiment_summary() -> pd.DataFrame:
+    path = EXPERIMENTS_DIR / "summary.csv"
+    return pd.read_csv(path) if path.exists() else pd.DataFrame()
+
+
 # ---------------------------------------------------------------------------
 # UI components
 # ---------------------------------------------------------------------------
@@ -677,7 +727,12 @@ with st.container(border=True):
     with audio_col:
         st.audio(str(audio_path))
 
+analysis = state("analysis")
+if analysis is None or state("analysis_key", (None,))[1] != str(audio_path):
+    analysis = analyse(audio_path)
+
 tabs = st.tabs([
+    "◎ Dashboard",
     "① Music analysis",
     "② Mapping plan",
     "③ Motion & render",
@@ -687,10 +742,158 @@ tabs = st.tabs([
 
 
 # ---------------------------------------------------------------------------
-# Tab 1 — analysis
+# Tab 0 — dashboard
 # ---------------------------------------------------------------------------
 
 with tabs[0]:
+    section("chart", "Studio dashboard", "library · runs · pipeline · experiments")
+
+    runs = load_runs()
+    library = library_frame()
+    experiments = experiment_summary()
+
+    best_bas = float(runs["bas"].max()) if not runs.empty else 0.0
+    mean_energy = float(runs["energy_corr"].mean()) if not runs.empty else 0.0
+
+    k1, k2, k3, k4 = st.columns(4, gap="medium")
+    k1.metric("Motion library", f"{len(library):,}", help="two-second clips indexed from AIST++")
+    k2.metric("Recorded runs", len(runs))
+    k3.metric("Best BAS", f"{best_bas:.3f}")
+    k4.metric("Mean energy corr.", f"{mean_energy:.3f}")
+
+    st.write("")
+    pipe_col, action_col = st.columns([1.35, 1.0], gap="large")
+
+    with pipe_col:
+        with st.container(border=True):
+            section("layers", "Pipeline status", "this session · selected song")
+            steps = [
+                ("Analysis", analysis is not None, "features + sections"),
+                ("Mapping plan", state("plan") is not None, "one clip per slot"),
+                ("Motion", state("motion_dir") is not None, "blended animation"),
+                ("Render", bool(state("render_path")), "Blender MP4"),
+                ("Evaluation", not experiments.empty, "experiment table"),
+            ]
+            rows_html = "".join(
+                "<div style='display:flex;justify-content:space-between;align-items:center;"
+                "padding:.45rem 0;border-bottom:1px solid #F1EFE8'>"
+                f"<div><span style='font-weight:750'>{name}</span>"
+                f"<span class='note' style='margin-left:.5rem'>{hint}</span></div>"
+                f"{pill('done' if ok else 'pending', 'ok' if ok else 'warn')}</div>"
+                for name, ok, hint in steps
+            )
+            st.markdown(rows_html, unsafe_allow_html=True)
+
+    with action_col:
+        with st.container(border=True):
+            section("play", "Quick actions", "runs in this session")
+            if st.button("Build mapping plan", type="primary", width="stretch"):
+                try:
+                    st.session_state["plan"] = make_plan(analysis, rules, mode)
+                    st.toast("Mapping plan ready", icon="✅")
+                except Exception as error:
+                    st.error(f"Mapping failed: {error}")
+            if st.button("Generate motion", width="stretch"):
+                try:
+                    if state("plan") is None:
+                        st.session_state["plan"] = make_plan(analysis, rules, mode)
+                    run_name = f"{paths.slug(audio_path.stem)}_{mode}"
+                    run_dir, metrics = build_motion_and_evaluate(
+                        analysis, state("plan"), rules, mode, run_name
+                    )
+                    image = preview_image(run_dir)
+                    st.session_state["preview"] = str(image) if image else None
+                    st.toast("Motion generated", icon="✨")
+                except Exception as error:
+                    st.error(f"Motion generation failed: {error}")
+            st.caption("Detailed controls are in the tabs below.")
+
+    st.write("")
+    runs_col, trend_col = st.columns([1.35, 1.0], gap="large")
+
+    with runs_col:
+        with st.container(border=True):
+            section("layers", "Recent runs", f"{len(runs)} recorded")
+            if runs.empty:
+                empty_state("🗂", "No runs yet", "Build a plan and generate motion to record the first run.")
+            else:
+                st.dataframe(
+                    runs.head(7)[["run", "mode", "bas", "beat_f1", "energy_corr", "video"]],
+                    width="stretch",
+                    hide_index=True,
+                    column_config={
+                        "run": st.column_config.TextColumn("run", width="medium"),
+                        "mode": st.column_config.TextColumn("mode", width="small"),
+                        "bas": st.column_config.NumberColumn("BAS", format="%.3f"),
+                        "beat_f1": st.column_config.NumberColumn("F1", format="%.3f"),
+                        "energy_corr": st.column_config.NumberColumn("energy", format="%.3f"),
+                        "video": st.column_config.CheckboxColumn("MP4"),
+                    },
+                )
+
+    with trend_col:
+        with st.container(border=True):
+            section("chart", "BAS across runs", "newest eight runs")
+            if len(runs) < 2:
+                st.caption("Record at least two runs to see the trend.")
+            else:
+                trend = runs.head(8).iloc[::-1].reset_index(drop=True)
+                trend["step"] = range(1, len(trend) + 1)
+                line = (
+                    alt.Chart(trend)
+                    .mark_line(point=alt.OverlayMarkDef(size=55, filled=True, color=ACCENT),
+                               color=ACCENT, strokeWidth=2.2)
+                    .encode(
+                        x=alt.X("step:O", title=None),
+                        y=alt.Y("bas:Q", title="BAS", scale=alt.Scale(zero=False)),
+                        tooltip=["run", "mode", "bas", "energy_corr"],
+                    )
+                )
+                st.altair_chart(altair_theme(line, 210), width="stretch")
+
+    st.write("")
+    with st.container(border=True):
+        section("book", "Experiment snapshot", "four songs × six conditions")
+        if experiments.empty:
+            st.caption("No experiment table yet — run `python src/experiment.py`.")
+        else:
+            melted = experiments.melt(
+                id_vars="mode",
+                value_vars=["energy_corr_mean", "beat_response_corr_mean"],
+                var_name="metric", value_name="value",
+            )
+            melted["metric"] = melted["metric"].map({
+                "energy_corr_mean": "energy correlation",
+                "beat_response_corr_mean": "beat-response correlation",
+            })
+            bars = (
+                alt.Chart(melted)
+                .mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5)
+                .encode(
+                    x=alt.X("mode:N", title=None, axis=alt.Axis(labelAngle=0)),
+                    xOffset="metric:N",
+                    y=alt.Y("value:Q", title=None),
+                    color=alt.Color(
+                        "metric:N",
+                        scale=alt.Scale(range=["#6C5CE7", "#00B8D9"]),
+                        legend=alt.Legend(orient="top", title=None),
+                    ),
+                    tooltip=["mode", "metric", alt.Tooltip("value:Q", format=".3f")],
+                )
+            )
+            st.altair_chart(altair_theme(bars, 230), width="stretch")
+            best = experiments.sort_values("energy_corr_mean", ascending=False).iloc[0]
+            st.caption(
+                f"Highest energy correlation: {best['mode']} ({best['energy_corr_mean']:.3f}). "
+                "Generated by src/experiment.py under identical pipeline settings."
+            )
+
+
+# ---------------------------------------------------------------------------
+# Tab 1 — analysis
+# ---------------------------------------------------------------------------
+
+with tabs[1]:
     section("music", "Musical analysis", "beat · tempo · energy · onset · structure")
 
     head_l, head_r = st.columns([1.0, 0.32])
@@ -698,10 +901,6 @@ with tabs[0]:
         if st.button("Re-analyse", type="secondary", width="stretch"):
             reset_results()
             analyse(audio_path, refresh=True)
-
-    analysis = state("analysis")
-    if analysis is None or state("analysis_key", (None,))[1] != str(audio_path):
-        analysis = analyse(audio_path)
 
     c1, c2, c3, c4 = st.columns(4, gap="medium")
     c1.metric("Duration", f"{analysis.duration:.1f} s")
@@ -751,7 +950,7 @@ with tabs[0]:
 # Tab 2 — plan
 # ---------------------------------------------------------------------------
 
-with tabs[1]:
+with tabs[2]:
     section("layers", "Music-to-motion mapping", "one clip decision per musical phrase")
 
     st.caption(
@@ -873,7 +1072,7 @@ with tabs[1]:
 # Tab 3 — motion and render
 # ---------------------------------------------------------------------------
 
-with tabs[2]:
+with tabs[3]:
     section("play", "Motion generation", "Slerp blending · DTW alignment · ground correction")
 
     col_a, col_b = st.columns([1.0, 1.0], gap="large")
@@ -950,7 +1149,7 @@ with tabs[2]:
 # Tab 4 — evaluation
 # ---------------------------------------------------------------------------
 
-with tabs[3]:
+with tabs[4]:
     section("chart", "Beat-only vs multi-level", "same library, same pipeline, different mapping")
 
     st.caption(
@@ -1051,7 +1250,7 @@ with tabs[3]:
 # Tab 5 — documentation
 # ---------------------------------------------------------------------------
 
-with tabs[4]:
+with tabs[5]:
     section("book", "How the system maps music to motion", "the five rules, the pipeline and the artifacts")
 
     with st.container(border=True):
