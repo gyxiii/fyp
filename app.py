@@ -105,61 +105,28 @@ section[data-testid="stSidebar"] {
     border-right: 1px solid rgba(255,255,255,0.06);
 }
 
-/* Streamlit hides the sidebar below 800 px; pin it and shift the main column. */
+/* Sidebar is collapsible; keep both toggles visible and on-brand. */
+button[data-testid="stExpandSidebarButton"] {
+    background: #0C0F1E !important;
+    color: #EDEEF7 !important;
+    border: 1px solid rgba(255,255,255,0.18) !important;
+    border-radius: 10px !important;
+}
+section[data-testid="stSidebar"] button[aria-label="Collapse sidebar"] {
+    visibility: visible !important;
+    opacity: 1 !important;
+    background: rgba(255,255,255,0.10) !important;
+    border: 1px solid rgba(255,255,255,0.16) !important;
+    border-radius: 8px !important;
+}
+section[data-testid="stSidebar"] button[aria-label="Collapse sidebar"] svg {
+    fill: #EDEEF7 !important;
+    color: #EDEEF7 !important;
+}
 @media (max-width: 820px) {
-    section[data-testid="stSidebar"] {
-        position: fixed !important;
-        top: 0 !important;
-        left: 0 !important;
-        bottom: 0 !important;
-        transform: none !important;
-        width: 250px !important;
-        min-width: 250px !important;
-        max-width: 250px !important;
-        visibility: visible !important;
-        display: block !important;
-        opacity: 1 !important;
-        z-index: 999;
-        overflow-y: auto !important;
-    }
-    section[data-testid="stSidebar"] > div { width: 250px !important; }
-    [data-testid="stMain"] {
-        margin-left: 250px !important;
-        width: calc(100% - 250px) !important;
-    }
-    [data-testid="stSidebarCollapsedControl"] { display: none !important; }
     .block-container { padding-left: 0.8rem !important; padding-right: 0.8rem !important; }
     .hero h1 { font-size: 1.9rem; }
     .eq { display: none; }
-}
-
-/* Streamlit remembers a collapsed sidebar between reloads. Keep it open and
-   remove the collapse toggle so the controls cannot disappear again. */
-section[data-testid="stSidebar"][data-collapsed="true"] {
-    width: 300px !important;
-    min-width: 300px !important;
-    max-width: 300px !important;
-    flex: 0 0 300px !important;
-    transform: none !important;
-    margin-left: 0 !important;
-    visibility: visible !important;
-    display: block !important;
-    opacity: 1 !important;
-}
-section[data-testid="stSidebar"][data-collapsed="true"] > div {
-    display: block !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-    width: 300px !important;
-}
-section[data-testid="stSidebar"][data-collapsed="true"] ~ [data-testid="stMain"] {
-    margin-left: 300px !important;
-}
-button[aria-label="Collapse sidebar"] { display: none !important; }
-@media (max-width: 820px) {
-    section[data-testid="stSidebar"][data-collapsed="true"] { width: 250px !important; min-width: 250px !important; max-width: 250px !important; }
-    section[data-testid="stSidebar"][data-collapsed="true"] > div { width: 250px !important; }
-    section[data-testid="stSidebar"][data-collapsed="true"] ~ [data-testid="stMain"] { margin-left: 250px !important; }
 }
 section[data-testid="stSidebar"] * { color: #EDEEF7; }
 section[data-testid="stSidebar"] .stSelectbox div[role="group"] { background: transparent !important; }
@@ -369,7 +336,15 @@ section[data-testid="stSidebar"] [data-baseweb="select"] svg { fill: #B9BFD8 !im
 }
 .stTabs [data-testid="stTab"][aria-selected="true"] p { color: #FFFFFF !important; }
 .stTabs .react-aria-SelectionIndicator, .stTabs [data-baseweb="tab-highlight"] { display: none !important; }
-[data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stAppDeployButton"], #MainMenu { display: none !important; }
+[data-testid="stDecoration"], [data-testid="stAppDeployButton"], #MainMenu { display: none !important; }
+[data-testid="stToolbar"] { background: transparent !important; }
+button[data-testid="stExpandSidebarButton"] {
+    display: inline-flex !important;
+    width: 36px !important; height: 36px !important;
+    align-items: center !important; justify-content: center !important;
+    margin: 6px !important;
+    box-shadow: 0 8px 18px -10px rgba(16, 20, 38, 0.7) !important;
+}
 
 /* ---------------- controls ---------------- */
 .stButton > button, [data-testid="stDownloadButton"] > button {
@@ -616,7 +591,6 @@ def hero() -> None:
         <div class="hero">
           <div class="hero-grid">
             <div>
-              <div class="kicker"><span class="dot"></span>CAT404 · Final Year Project · build v3</div>
               <h1>MusicMotion <em>Studio</em></h1>
               <p>An interpretable music-driven 3D character animation system. Beat, tempo, energy,
               onset and structure are mapped onto motion by explicit, editable rules — then rendered
@@ -813,11 +787,13 @@ if analysis is None or state("analysis_key", (None,))[1] != str(audio_path):
     analysis = analyse(audio_path)
 
 PAGES = ["Dashboard", "Analysis", "Plan", "Motion", "Evaluation", "Library", "Docs"]
-st.session_state.setdefault("nav", "Dashboard")
-page = st.pills("Navigate", PAGES, default=st.session_state["nav"], label_visibility="collapsed")
+if "nav" not in st.session_state:
+    st.session_state["nav"] = "Dashboard"
+if "nav_request" in st.session_state:
+    st.session_state["nav"] = st.session_state.pop("nav_request")
+page = st.pills("Navigate", PAGES, key="nav", label_visibility="collapsed")
 if page is None:
     page = "Dashboard"
-st.session_state["nav"] = page
 
 
 # ---------------------------------------------------------------------------
@@ -825,19 +801,10 @@ st.session_state["nav"] = page
 # ---------------------------------------------------------------------------
 
 if page == "Dashboard":
-    section("chart", "Studio overview", "everything the studio can do")
-
     runs = load_runs()
     library = library_frame()
     experiments = experiment_summary()
 
-    k1, k2, k3, k4 = st.columns(4, gap="medium")
-    k1.metric("Motion library", f"{len(library):,}")
-    k2.metric("Recorded runs", len(runs))
-    k3.metric("Best BAS", f"{float(runs['bas'].max()) if not runs.empty else 0.0:.3f}")
-    k4.metric("Conditions", len(experiments) if not experiments.empty else 0)
-
-    st.write("")
     section("layers", "Features", "choose a workspace")
 
     cards = [
@@ -852,10 +819,10 @@ if page == "Dashboard":
          f"BAS {state('metrics')['bas']:.3f}" if state("metrics") else "no motion yet", "Motion"),
         ("chart", "Evaluation",
          "Beat-only versus multi-level, plus the six-condition ablation table.",
-         f"{len(runs)} runs recorded", "Evaluation"),
+         f"{len(runs)} runs · {len(experiments)} conditions", "Evaluation"),
         ("layers", "Motion library",
          "16 737 AIST++ clips, browsable by dance genre with skeleton previews.",
-         f"{library['genre'].nunique()} genres", "Library"),
+         f"{len(library):,} clips · {library['genre'].nunique()} genres", "Library"),
         ("book", "Documentation",
          "Mapping rules, run artefacts and the generated reports.",
          "3 reports", "Docs"),
@@ -877,7 +844,7 @@ if page == "Dashboard":
                         unsafe_allow_html=True,
                     )
                     if st.button(f"Open {title.split(' &')[0]}", key=f"open_{target}", width="stretch"):
-                        st.session_state["nav"] = target
+                        st.session_state["nav_request"] = target
                         st.rerun()
 
     if not runs.empty:
