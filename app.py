@@ -35,6 +35,7 @@ import motion_blend  # noqa: E402
 import music_features  # noqa: E402
 import paths  # noqa: E402
 import pipeline  # noqa: E402
+import library_view  # noqa: E402
 
 paths.ensure_dirs()
 
@@ -791,11 +792,12 @@ if analysis is None or state("analysis_key", (None,))[1] != str(audio_path):
 
 tabs = st.tabs([
     "◎ Dashboard",
-    "① Music analysis",
-    "② Mapping plan",
-    "③ Motion & render",
+    "① Analysis",
+    "② Plan",
+    "③ Motion",
     "④ Evaluation",
-    "⑤ Documentation",
+    "⑤ Library",
+    "⑥ Docs",
 ])
 
 
@@ -1305,10 +1307,139 @@ with tabs[4]:
 
 
 # ---------------------------------------------------------------------------
-# Tab 5 — documentation
+# Tab 5 — motion library
 # ---------------------------------------------------------------------------
 
 with tabs[5]:
+    section("layers", "Motion library", "browse every clip by dance genre")
+
+    library = library_frame()
+    genres = sorted(library["genre"].unique())
+
+    k1, k2, k3, k4 = st.columns(4, gap="medium")
+    k1.metric("Clips", f"{len(library):,}")
+    k2.metric("Genres", len(genres))
+    k3.metric("Mean energy", f"{library['energy'].mean():.3f}")
+    k4.metric("Mean internal BPM", f"{library['internal_bpm'].mean():.0f}")
+
+    st.write("")
+    with st.container(border=True):
+        section("chart", "Clips per genre", "AIST++ street-dance styles")
+        counts = (
+            library.groupby("genre").size().reset_index(name="clips").sort_values("clips")
+        )
+        bars = (
+            alt.Chart(counts)
+            .mark_bar(cornerRadiusTopRight=6, cornerRadiusBottomRight=6, height=16)
+            .encode(
+                x=alt.X("clips:Q", title=None),
+                y=alt.Y("genre:N", title=None, sort="-x"),
+                color=alt.Color(
+                    "genre:N",
+                    scale=alt.Scale(
+                        domain=genres,
+                        range=[library_view.genre_colour(genre) for genre in genres],
+                    ),
+                    legend=None,
+                ),
+                tooltip=["genre", "clips"],
+            )
+        )
+        st.altair_chart(altair_theme(bars, 280), width="stretch")
+
+    st.write("")
+    with st.container(border=True):
+        section("layers", "Browse clips", "filter · shuffle · inspect")
+
+        picked = st.pills(
+            "Genre", ["All genres"] + genres, default="All genres",
+            label_visibility="collapsed",
+        )
+        f1, f2, f3, f4 = st.columns([1.0, 1.2, 1.2, 0.8], gap="medium")
+        energy_pick = f1.selectbox("Energy class", ["Any", "calm", "mid", "energetic"])
+        sort_pick = f2.selectbox(
+            "Sort by", ["Random", "Energy ↓", "Internal tempo ↓", "Rhythmicity ↓"]
+        )
+        per_page = f3.slider("Clips per page", 4, 16, 8, step=4)
+        with f4:
+            st.write("")
+            if st.button("Shuffle", width="stretch"):
+                st.session_state["library_seed"] = int(np.random.default_rng().integers(1, 10_000))
+
+        view = library
+        if picked and picked != "All genres":
+            view = view[view["genre"] == picked]
+        if energy_pick != "Any":
+            view = view[view["energy_class"] == {"calm": 0, "mid": 1, "energetic": 2}[energy_pick]]
+
+        if view.empty:
+            st.caption("No clips match these filters.")
+            view = library
+
+        seed = int(st.session_state.get("library_seed", 7))
+        if sort_pick == "Random":
+            sample = view.sample(min(per_page, len(view)), random_state=seed)
+        else:
+            column = {
+                "Energy ↓": "energy",
+                "Internal tempo ↓": "internal_bpm",
+                "Rhythmicity ↓": "rhythmicity",
+            }[sort_pick]
+            sample = view.sort_values(column, ascending=False).head(per_page)
+
+        sample = sample.sort_values("clip_id").reset_index(drop=True)
+        st.caption(f"{len(view):,} clips match · showing {len(sample)}")
+
+        grid = st.columns(4, gap="medium")
+        for index, row in sample.iterrows():
+            with grid[index % 4]:
+                st.image(
+                    library_view.pose_png(
+                        int(row["clip_id"]), size=220, genre=str(row["genre"])
+                    ),
+                    width="stretch",
+                )
+                st.markdown(
+                    f"<div style='font-weight:750;font-size:.86rem;margin-top:.1rem'>"
+                    f"#{int(row['clip_id'])} · {row['genre']}</div>"
+                    f"<div class='note'>{row['internal_bpm']:.0f} BPM · "
+                    f"energy {row['energy']:.2f}</div>",
+                    unsafe_allow_html=True,
+                )
+
+    st.write("")
+    with st.container(border=True):
+        section("wave", "Clip inspector", "one clip, six frames, nine descriptors")
+        options = sample["clip_id"].tolist()
+        chosen = st.selectbox(
+            "Clip",
+            options,
+            format_func=lambda value: (
+                f"#{int(value)} · {sample.loc[sample['clip_id'] == value, 'genre'].iloc[0]}"
+            ),
+        )
+        row = sample[sample["clip_id"] == chosen].iloc[0]
+        st.image(
+            library_view.strip_png(int(chosen), frames=6, cell=150, genre=str(row["genre"])),
+            width="stretch",
+        )
+        d1, d2, d3, d4, d5 = st.columns(5, gap="small")
+        d1.metric("Energy", f"{row['energy']:.3f}")
+        d2.metric("Tempo", f"{row['internal_bpm']:.0f}")
+        d3.metric("Rhythmicity", f"{row['rhythmicity']:.2f}")
+        d4.metric("Arm activity", f"{row['arm_activity']:.3f}")
+        d5.metric("Leg activity", f"{row['leg_activity']:.3f}")
+        st.caption(
+            f"Source: {row['source_file']} · start {row['start_time']:.2f}s · "
+            f"energy class {int(row['energy_class'])} · genre code {row['genre_code']}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tab 6 — documentation
+# ---------------------------------------------------------------------------
+
+with tabs[6]:
     section("book", "How the system maps music to motion", "the five rules, the pipeline and the artifacts")
 
     with st.container(border=True):
