@@ -96,11 +96,40 @@ h3 { font-weight: 700; font-size: 1.05rem; }
 
 /* ---------------- sidebar ---------------- */
 section[data-testid="stSidebar"] {
+    background-color: #0C0F1E;
     background:
         radial-gradient(500px 300px at 20% -8%, rgba(108, 92, 231, 0.30), transparent 65%),
         radial-gradient(420px 260px at 110% 30%, rgba(0, 184, 217, 0.16), transparent 60%),
         linear-gradient(180deg, #0C0F1E 0%, #0A0C18 100%);
     border-right: 1px solid rgba(255,255,255,0.06);
+}
+
+/* Streamlit hides the sidebar below 800 px; pin it and shift the main column. */
+@media (max-width: 820px) {
+    section[data-testid="stSidebar"] {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        bottom: 0 !important;
+        transform: none !important;
+        width: 250px !important;
+        min-width: 250px !important;
+        max-width: 250px !important;
+        visibility: visible !important;
+        display: block !important;
+        opacity: 1 !important;
+        z-index: 999;
+        overflow-y: auto !important;
+    }
+    section[data-testid="stSidebar"] > div { width: 250px !important; }
+    [data-testid="stMain"] {
+        margin-left: 250px !important;
+        width: calc(100% - 250px) !important;
+    }
+    [data-testid="stSidebarCollapsedControl"] { display: none !important; }
+    .block-container { padding-left: 0.8rem !important; padding-right: 0.8rem !important; }
+    .hero h1 { font-size: 1.9rem; }
+    .eq { display: none; }
 }
 section[data-testid="stSidebar"] * { color: #EDEEF7; }
 section[data-testid="stSidebar"] .stSelectbox div[role="group"] { background: transparent !important; }
