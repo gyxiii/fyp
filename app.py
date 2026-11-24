@@ -23,6 +23,7 @@ from datetime import datetime
 from pathlib import Path
 
 import altair as alt
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -43,7 +44,7 @@ st.set_page_config(
     page_title="MusicMotion Studio",
     page_icon="🎵",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 UPLOAD_DIR = PROJECT_DIR / "outputs" / "uploads"
@@ -87,7 +88,7 @@ html, body, .stApp, [data-testid="stAppViewContainer"] {
 
 .block-container {
     max-width: 1080px;
-    padding-top: 1.5rem;
+    padding-top: 4.2rem;
     padding-bottom: 4.5rem;
 }
 
@@ -122,6 +123,16 @@ section[data-testid="stSidebar"] button[aria-label="Collapse sidebar"] {
 section[data-testid="stSidebar"] button[aria-label="Collapse sidebar"] svg {
     fill: #EDEEF7 !important;
     color: #EDEEF7 !important;
+}
+button[data-testid="stExpandSidebarButton"] svg { display: none !important; }
+button[data-testid="stExpandSidebarButton"]::before {
+    content: ">";
+    font-family: 'Manrope', system-ui, sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1;
+    color: #FFFFFF;
+    transform: translateY(-1px);
 }
 @media (max-width: 820px) {
     .block-container { padding-left: 0.8rem !important; padding-right: 0.8rem !important; }
@@ -451,9 +462,11 @@ def analyse(path: Path, refresh: bool = False):
     if state("analysis_key") == key and state("analysis") is not None:
         return state("analysis")
 
-    with st.status("Analysing the music…", expanded=False) as status:
+    placeholder = st.empty()
+    with placeholder.status("Analysing the music…", expanded=False) as status:
         analysis = music_features.analyse_music(path, out_dir=paths.feature_dir(path), make_plot=True)
         status.update(label="Analysis complete", state="complete")
+    placeholder.empty()
 
     st.session_state["analysis"] = analysis
     st.session_state["analysis_key"] = key
@@ -750,37 +763,14 @@ if uploaded is not None:
 elif demo_choice:
     audio_path = paths.AUDIO_DIR / demo_choice
 
-hero()
-
 if audio_path is None or not audio_path.exists():
-    empty_state("🎧", "Choose a song to begin", "Upload a WAV file or pick a bundled demo song in the sidebar.")
+    empty_state("🎧", "Choose a song to begin", "Upload a WAV file or pick a bundled demo song from the › menu at the top left.")
     st.stop()
 
 # ---------------------------------------------------------------------------
 # Song strip
 # ---------------------------------------------------------------------------
 
-st.write("")
-with st.container(border=True):
-    info_col, audio_col = st.columns([1.7, 1.0], gap="large")
-    with info_col:
-        st.markdown(
-            f"""
-            <div class="player">
-              <div class="disc"></div>
-              <div>
-                <div class="note" style="text-transform:uppercase;letter-spacing:.16em;font-weight:750;color:#6A7085">
-                    Now working on
-                </div>
-                <div style="font-size:1.28rem;font-weight:800;letter-spacing:-.02em;line-height:1.25">{audio_path.name}</div>
-                <div style="margin-top:.35rem">{pill(mode, 'info')}&nbsp;{pill('rules editable', 'ok')}</div>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with audio_col:
-        st.audio(str(audio_path))
 
 analysis = state("analysis")
 if analysis is None or state("analysis_key", (None,))[1] != str(audio_path):
@@ -801,6 +791,31 @@ if page is None:
 # ---------------------------------------------------------------------------
 
 if page == "Dashboard":
+    hero()
+    st.write("")
+
+    st.write("")
+    with st.container(border=True):
+        info_col, audio_col = st.columns([1.7, 1.0], gap="large")
+        with info_col:
+            st.markdown(
+                f"""
+                <div class="player">
+                  <div class="disc"></div>
+                  <div>
+                    <div class="note" style="text-transform:uppercase;letter-spacing:.16em;font-weight:750;color:#6A7085">
+                        Now working on
+                    </div>
+                    <div style="font-size:1.28rem;font-weight:800;letter-spacing:-.02em;line-height:1.25">{audio_path.name}</div>
+                    <div style="margin-top:.35rem">{pill(mode, 'info')}&nbsp;{pill('rules editable', 'ok')}</div>
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        with audio_col:
+            st.audio(str(audio_path))
+
     runs = load_runs()
     library = library_frame()
     experiments = experiment_summary()
@@ -1223,38 +1238,6 @@ if page == "Library":
     library = library_frame()
     genres = sorted(library["genre"].unique())
 
-    k1, k2, k3, k4 = st.columns(4, gap="medium")
-    k1.metric("Clips", f"{len(library):,}")
-    k2.metric("Genres", len(genres))
-    k3.metric("Mean energy", f"{library['energy'].mean():.3f}")
-    k4.metric("Mean internal BPM", f"{library['internal_bpm'].mean():.0f}")
-
-    st.write("")
-    with st.container(border=True):
-        section("chart", "Clips per genre", "AIST++ street-dance styles")
-        counts = (
-            library.groupby("genre").size().reset_index(name="clips").sort_values("clips")
-        )
-        bars = (
-            alt.Chart(counts)
-            .mark_bar(cornerRadiusTopRight=6, cornerRadiusBottomRight=6, height=16)
-            .encode(
-                x=alt.X("clips:Q", title=None),
-                y=alt.Y("genre:N", title=None, sort="-x"),
-                color=alt.Color(
-                    "genre:N",
-                    scale=alt.Scale(
-                        domain=genres,
-                        range=[library_view.genre_colour(genre) for genre in genres],
-                    ),
-                    legend=None,
-                ),
-                tooltip=["genre", "clips"],
-            )
-        )
-        st.altair_chart(altair_theme(bars, 280), width="stretch")
-
-    st.write("")
     with st.container(border=True):
         section("layers", "Browse clips", "filter · shuffle · inspect")
 
@@ -1295,17 +1278,22 @@ if page == "Library":
             sample = view.sort_values(column, ascending=False).head(per_page)
 
         sample = sample.sort_values("clip_id").reset_index(drop=True)
-        st.caption(f"{len(view):,} clips match · showing {len(sample)}")
+        caption_col, style_col = st.columns([2.4, 1.6], gap="small")
+        caption_col.caption(f"{len(view):,} clips match · showing {len(sample)}")
+        style = style_col.pills(
+            "Style", ["Clay", "Skeleton"], default="Clay", label_visibility="collapsed"
+        )
 
         grid = st.columns(4, gap="medium")
         for index, row in sample.iterrows():
             with grid[index % 4]:
-                st.image(
-                    library_view.pose_png(
-                        int(row["clip_id"]), size=220, genre=str(row["genre"])
-                    ),
-                    width="stretch",
-                )
+                clip_id = int(row["clip_id"])
+                genre = str(row["genre"])
+                if style == "Skeleton":
+                    image = library_view.pose_gif(clip_id, frames=16, size=220, fps=15, genre=genre)
+                else:
+                    image = library_view.clay_gif(clip_id, frames=16, size=220, fps=15, genre=genre)
+                st.image(image, width="stretch")
                 st.markdown(
                     f"<div style='font-weight:750;font-size:.86rem;margin-top:.1rem'>"
                     f"#{int(row['clip_id'])} · {row['genre']}</div>"
@@ -1316,7 +1304,7 @@ if page == "Library":
 
     st.write("")
     with st.container(border=True):
-        section("wave", "Clip inspector", "one clip, six frames, nine descriptors")
+        section("wave", "Clip inspector", "looping preview and nine descriptors")
         options = sample["clip_id"].tolist()
         chosen = st.selectbox(
             "Clip",
@@ -1326,10 +1314,15 @@ if page == "Library":
             ),
         )
         row = sample[sample["clip_id"] == chosen].iloc[0]
-        st.image(
-            library_view.strip_png(int(chosen), frames=6, cell=150, genre=str(row["genre"])),
-            width="stretch",
-        )
+        if style == "Skeleton":
+            preview = library_view.pose_gif(
+                int(chosen), frames=24, size=380, fps=16, genre=str(row["genre"])
+            )
+        else:
+            preview = library_view.clay_gif(
+                int(chosen), frames=24, size=380, fps=16, genre=str(row["genre"])
+            )
+        st.image(preview, width=380)
         d1, d2, d3, d4, d5 = st.columns(5, gap="small")
         d1.metric("Energy", f"{row['energy']:.3f}")
         d2.metric("Tempo", f"{row['internal_bpm']:.0f}")
