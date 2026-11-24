@@ -131,6 +131,35 @@ section[data-testid="stSidebar"] {
     .hero h1 { font-size: 1.9rem; }
     .eq { display: none; }
 }
+
+/* Streamlit remembers a collapsed sidebar between reloads. Keep it open and
+   remove the collapse toggle so the controls cannot disappear again. */
+section[data-testid="stSidebar"][data-collapsed="true"] {
+    width: 300px !important;
+    min-width: 300px !important;
+    max-width: 300px !important;
+    flex: 0 0 300px !important;
+    transform: none !important;
+    margin-left: 0 !important;
+    visibility: visible !important;
+    display: block !important;
+    opacity: 1 !important;
+}
+section[data-testid="stSidebar"][data-collapsed="true"] > div {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    width: 300px !important;
+}
+section[data-testid="stSidebar"][data-collapsed="true"] ~ [data-testid="stMain"] {
+    margin-left: 300px !important;
+}
+button[aria-label="Collapse sidebar"] { display: none !important; }
+@media (max-width: 820px) {
+    section[data-testid="stSidebar"][data-collapsed="true"] { width: 250px !important; min-width: 250px !important; max-width: 250px !important; }
+    section[data-testid="stSidebar"][data-collapsed="true"] > div { width: 250px !important; }
+    section[data-testid="stSidebar"][data-collapsed="true"] ~ [data-testid="stMain"] { margin-left: 250px !important; }
+}
 section[data-testid="stSidebar"] * { color: #EDEEF7; }
 section[data-testid="stSidebar"] .stSelectbox div[role="group"] { background: transparent !important; }
 section[data-testid="stSidebar"] .stSelectbox input[role="combobox"] {
@@ -564,7 +593,7 @@ def hero() -> None:
         <div class="hero">
           <div class="hero-grid">
             <div>
-              <div class="kicker"><span class="dot"></span>CAT404 · Final Year Project</div>
+              <div class="kicker"><span class="dot"></span>CAT404 · Final Year Project · build v3</div>
               <h1>MusicMotion <em>Studio</em></h1>
               <p>An interpretable music-driven 3D character animation system. Beat, tempo, energy,
               onset and structure are mapped onto motion by explicit, editable rules — then rendered
