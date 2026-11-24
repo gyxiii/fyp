@@ -302,6 +302,28 @@ section[data-testid="stSidebar"] [data-baseweb="select"] svg { fill: #B9BFD8 !im
 .rule { height: 3px; width: 54px; border-radius: 99px; margin: 0.5rem 0 0.9rem 0;
     background: linear-gradient(90deg, #6C5CE7, #00B8D9 60%, transparent); }
 
+/* pill navigation and filters */
+[data-testid="stButtonGroup"] button[data-variant="pills"] {
+    border-radius: 999px !important;
+    border: 1px solid var(--line) !important;
+    background: #FFFFFF !important;
+    color: #5B6178 !important;
+    font-weight: 650 !important;
+    font-size: 0.85rem !important;
+    padding: 0.32rem 0.95rem !important;
+}
+[data-testid="stButtonGroup"] button[data-variant="pills"]:hover {
+    border-color: #C9C2F5 !important; color: #3A2E86 !important;
+}
+[data-testid="stButtonGroup"] button[data-variant="pills"][aria-checked="true"] {
+    background: linear-gradient(135deg, #6C5CE7, #7E6CF2) !important;
+    border-color: transparent !important;
+    box-shadow: 0 10px 22px -12px rgba(108, 92, 231, 0.9) !important;
+}
+[data-testid="stButtonGroup"] button[data-variant="pills"][aria-checked="true"] * {
+    color: #FFFFFF !important;
+}
+
 [data-testid="stMetric"] {
     background: #FFFFFF;
     border: 1px solid var(--line);
@@ -790,170 +812,88 @@ analysis = state("analysis")
 if analysis is None or state("analysis_key", (None,))[1] != str(audio_path):
     analysis = analyse(audio_path)
 
-tabs = st.tabs([
-    "◎ Dashboard",
-    "① Analysis",
-    "② Plan",
-    "③ Motion",
-    "④ Evaluation",
-    "⑤ Library",
-    "⑥ Docs",
-])
+PAGES = ["Dashboard", "Analysis", "Plan", "Motion", "Evaluation", "Library", "Docs"]
+st.session_state.setdefault("nav", "Dashboard")
+page = st.pills("Navigate", PAGES, default=st.session_state["nav"], label_visibility="collapsed")
+if page is None:
+    page = "Dashboard"
+st.session_state["nav"] = page
 
 
 # ---------------------------------------------------------------------------
-# Tab 0 — dashboard
+# Page — dashboard
 # ---------------------------------------------------------------------------
 
-with tabs[0]:
-    section("chart", "Studio dashboard", "library · runs · pipeline · experiments")
+if page == "Dashboard":
+    section("chart", "Studio overview", "everything the studio can do")
 
     runs = load_runs()
     library = library_frame()
     experiments = experiment_summary()
 
-    best_bas = float(runs["bas"].max()) if not runs.empty else 0.0
-    mean_energy = float(runs["energy_corr"].mean()) if not runs.empty else 0.0
-
     k1, k2, k3, k4 = st.columns(4, gap="medium")
-    k1.metric("Motion library", f"{len(library):,}", help="two-second clips indexed from AIST++")
+    k1.metric("Motion library", f"{len(library):,}")
     k2.metric("Recorded runs", len(runs))
-    k3.metric("Best BAS", f"{best_bas:.3f}")
-    k4.metric("Mean energy corr.", f"{mean_energy:.3f}")
+    k3.metric("Best BAS", f"{float(runs['bas'].max()) if not runs.empty else 0.0:.3f}")
+    k4.metric("Conditions", len(experiments) if not experiments.empty else 0)
 
     st.write("")
-    pipe_col, action_col = st.columns([1.35, 1.0], gap="large")
+    section("layers", "Features", "choose a workspace")
 
-    with pipe_col:
-        with st.container(border=True):
-            section("layers", "Pipeline status", "this session · selected song")
-            steps = [
-                ("Analysis", analysis is not None, "features + sections"),
-                ("Mapping plan", state("plan") is not None, "one clip per slot"),
-                ("Motion", state("motion_dir") is not None, "blended animation"),
-                ("Render", bool(state("render_path")), "Blender MP4"),
-                ("Evaluation", not experiments.empty, "experiment table"),
-            ]
-            rows_html = "".join(
-                "<div style='display:flex;justify-content:space-between;align-items:center;"
-                "padding:.45rem 0;border-bottom:1px solid #F1EFE8'>"
-                f"<div><span style='font-weight:750'>{name}</span>"
-                f"<span class='note' style='margin-left:.5rem'>{hint}</span></div>"
-                f"{pill('done' if ok else 'pending', 'ok' if ok else 'warn')}</div>"
-                for name, ok, hint in steps
-            )
-            st.markdown(rows_html, unsafe_allow_html=True)
+    cards = [
+        ("music", "Music analysis",
+         "Waveform, beats, tempo, energy and sections for the selected song.",
+         f"{len(analysis.beats)} beats · {analysis.tempo_bpm:.0f} BPM", "Analysis"),
+        ("layers", "Mapping plan",
+         "One clip decision per phrase slot, with a written explanation of every choice.",
+         f"{len(state('plan').plan)} slots" if state("plan") is not None else "not built yet", "Plan"),
+        ("play", "Motion & render",
+         "Assemble and blend the clips, preview the pose, then render with Blender.",
+         f"BAS {state('metrics')['bas']:.3f}" if state("metrics") else "no motion yet", "Motion"),
+        ("chart", "Evaluation",
+         "Beat-only versus multi-level, plus the six-condition ablation table.",
+         f"{len(runs)} runs recorded", "Evaluation"),
+        ("layers", "Motion library",
+         "16 737 AIST++ clips, browsable by dance genre with skeleton previews.",
+         f"{library['genre'].nunique()} genres", "Library"),
+        ("book", "Documentation",
+         "Mapping rules, run artefacts and the generated reports.",
+         "3 reports", "Docs"),
+    ]
 
-    with action_col:
-        with st.container(border=True):
-            section("play", "Quick actions", "runs in this session")
-            if st.button("Build mapping plan", type="primary", width="stretch"):
-                try:
-                    st.session_state["plan"] = make_plan(analysis, rules, mode)
-                    st.toast("Mapping plan ready", icon="✅")
-                except Exception as error:
-                    st.error(f"Mapping failed: {error}")
-            if st.button("Generate motion", width="stretch"):
-                try:
-                    if state("plan") is None:
-                        st.session_state["plan"] = make_plan(analysis, rules, mode)
-                    run_name = f"{paths.slug(audio_path.stem)}_{mode}"
-                    run_dir, metrics = build_motion_and_evaluate(
-                        analysis, state("plan"), rules, mode, run_name
+    for offset in (0, 3):
+        columns = st.columns(3, gap="large")
+        for column, (icon, title, body, stat, target) in zip(columns, cards[offset:offset + 3]):
+            with column:
+                with st.container(border=True):
+                    st.markdown(
+                        f"<div class='sec'><div class='sec-ico'>{ICONS[icon]}</div>"
+                        f"<div><div class='sec-t'>{title}</div>"
+                        f"<div class='sec-h'>{stat}</div></div></div>",
+                        unsafe_allow_html=True,
                     )
-                    image = preview_image(run_dir)
-                    st.session_state["preview"] = str(image) if image else None
-                    st.toast("Motion generated", icon="✨")
-                except Exception as error:
-                    st.error(f"Motion generation failed: {error}")
-            st.caption("Detailed controls are in the tabs below.")
-
-    st.write("")
-    runs_col, trend_col = st.columns([1.35, 1.0], gap="large")
-
-    with runs_col:
-        with st.container(border=True):
-            section("layers", "Recent runs", f"{len(runs)} recorded")
-            if runs.empty:
-                empty_state("🗂", "No runs yet", "Build a plan and generate motion to record the first run.")
-            else:
-                st.dataframe(
-                    runs.head(7)[["run", "mode", "bas", "beat_f1", "energy_corr", "video"]],
-                    width="stretch",
-                    hide_index=True,
-                    column_config={
-                        "run": st.column_config.TextColumn("run", width="medium"),
-                        "mode": st.column_config.TextColumn("mode", width="small"),
-                        "bas": st.column_config.NumberColumn("BAS", format="%.3f"),
-                        "beat_f1": st.column_config.NumberColumn("F1", format="%.3f"),
-                        "energy_corr": st.column_config.NumberColumn("energy", format="%.3f"),
-                        "video": st.column_config.CheckboxColumn("MP4"),
-                    },
-                )
-
-    with trend_col:
-        with st.container(border=True):
-            section("chart", "BAS across runs", "newest eight runs")
-            if len(runs) < 2:
-                st.caption("Record at least two runs to see the trend.")
-            else:
-                trend = runs.head(8).iloc[::-1].reset_index(drop=True)
-                trend["step"] = range(1, len(trend) + 1)
-                line = (
-                    alt.Chart(trend)
-                    .mark_line(point=alt.OverlayMarkDef(size=55, filled=True, color=ACCENT),
-                               color=ACCENT, strokeWidth=2.2)
-                    .encode(
-                        x=alt.X("step:O", title=None),
-                        y=alt.Y("bas:Q", title="BAS", scale=alt.Scale(zero=False)),
-                        tooltip=["run", "mode", "bas", "energy_corr"],
+                    st.markdown(
+                        f"<div class='note' style='margin:.65rem 0 .85rem 0'>{body}</div>",
+                        unsafe_allow_html=True,
                     )
-                )
-                st.altair_chart(altair_theme(line, 210), width="stretch")
+                    if st.button(f"Open {title.split(' &')[0]}", key=f"open_{target}", width="stretch"):
+                        st.session_state["nav"] = target
+                        st.rerun()
 
-    st.write("")
-    with st.container(border=True):
-        section("book", "Experiment snapshot", "four songs × six conditions")
-        if experiments.empty:
-            st.caption("No experiment table yet — run `python src/experiment.py`.")
-        else:
-            melted = experiments.melt(
-                id_vars="mode",
-                value_vars=["energy_corr_mean", "beat_response_corr_mean"],
-                var_name="metric", value_name="value",
-            )
-            melted["metric"] = melted["metric"].map({
-                "energy_corr_mean": "energy correlation",
-                "beat_response_corr_mean": "beat-response correlation",
-            })
-            bars = (
-                alt.Chart(melted)
-                .mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5)
-                .encode(
-                    x=alt.X("mode:N", title=None, axis=alt.Axis(labelAngle=0)),
-                    xOffset="metric:N",
-                    y=alt.Y("value:Q", title=None),
-                    color=alt.Color(
-                        "metric:N",
-                        scale=alt.Scale(range=["#6C5CE7", "#00B8D9"]),
-                        legend=alt.Legend(orient="top", title=None),
-                    ),
-                    tooltip=["mode", "metric", alt.Tooltip("value:Q", format=".3f")],
-                )
-            )
-            st.altair_chart(altair_theme(bars, 230), width="stretch")
-            best = experiments.sort_values("energy_corr_mean", ascending=False).iloc[0]
-            st.caption(
-                f"Highest energy correlation: {best['mode']} ({best['energy_corr_mean']:.3f}). "
-                "Generated by src/experiment.py under identical pipeline settings."
-            )
+    if not runs.empty:
+        latest = runs.iloc[0]
+        st.write("")
+        st.caption(
+            f"Latest run · {latest['run']} · BAS {latest['bas']:.3f} · "
+            f"F1 {latest['beat_f1']:.3f} · {latest['modified']}"
+        )
 
 
 # ---------------------------------------------------------------------------
 # Tab 1 — analysis
 # ---------------------------------------------------------------------------
 
-with tabs[1]:
+if page == "Analysis":
     section("music", "Musical analysis", "beat · tempo · energy · onset · structure")
 
     head_l, head_r = st.columns([1.0, 0.32])
@@ -1010,7 +950,7 @@ with tabs[1]:
 # Tab 2 — plan
 # ---------------------------------------------------------------------------
 
-with tabs[2]:
+if page == "Plan":
     section("layers", "Music-to-motion mapping", "one clip decision per musical phrase")
 
     st.caption(
@@ -1132,7 +1072,7 @@ with tabs[2]:
 # Tab 3 — motion and render
 # ---------------------------------------------------------------------------
 
-with tabs[3]:
+if page == "Motion":
     section("play", "Motion generation", "Slerp blending · DTW alignment · ground correction")
 
     col_a, col_b = st.columns([1.0, 1.0], gap="large")
@@ -1209,7 +1149,7 @@ with tabs[3]:
 # Tab 4 — evaluation
 # ---------------------------------------------------------------------------
 
-with tabs[4]:
+if page == "Evaluation":
     section("chart", "Beat-only vs multi-level", "same library, same pipeline, different mapping")
 
     st.caption(
@@ -1310,7 +1250,7 @@ with tabs[4]:
 # Tab 5 — motion library
 # ---------------------------------------------------------------------------
 
-with tabs[5]:
+if page == "Library":
     section("layers", "Motion library", "browse every clip by dance genre")
 
     library = library_frame()
@@ -1439,7 +1379,7 @@ with tabs[5]:
 # Tab 6 — documentation
 # ---------------------------------------------------------------------------
 
-with tabs[6]:
+if page == "Docs":
     section("book", "How the system maps music to motion", "the five rules, the pipeline and the artifacts")
 
     with st.container(border=True):

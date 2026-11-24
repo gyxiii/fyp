@@ -17,7 +17,9 @@ def main() -> int:
         print("initial render failed:", [e.value for e in at.exception])
         return 1
 
-    # click "Build mapping plan"
+    # the dashboard is a hub; navigate to the plan workspace first
+    at.session_state["nav"] = "Plan"
+    at.run()
     buttons = {button.label: button for button in at.button}
     if "Build mapping plan" not in buttons:
         print("build button missing; buttons:", list(buttons))
@@ -29,7 +31,8 @@ def main() -> int:
         print(error.value)
     print("dataframes:", len(at.dataframe), "charts:", len(at.get("line_chart")))
 
-    # click "Generate motion"
+    at.session_state["nav"] = "Motion"
+    at.run()
     buttons = {button.label: button for button in at.button}
     if "Generate motion" not in buttons:
         print("generate button missing; buttons:", list(buttons))
@@ -39,7 +42,7 @@ def main() -> int:
     print("after generate: exceptions =", len(at.exception))
     for error in at.exception:
         print(error.value)
-    print("metrics:", len(at.metric), "images:", len(at.get("imgs")) if hasattr(at, "get") else "-")
+    print("metrics:", len(at.metric))
     return 0 if not at.exception else 1
 
 
