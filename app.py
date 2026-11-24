@@ -1,12 +1,12 @@
 """MusicMotion Studio — interactive music-driven character animation (CAT404).
 
-A Streamlit front end for the pipeline in ``src/``:
+Streamlit front end for the pipeline in ``src/``:
 
     audio -> features -> mapping plan -> motion -> Blender render -> evaluation
 
 The interface is deliberately *rule-transparent*: every mapping weight is
-visible and editable, because inspecting and adjusting the mapping is the
-difference between this system and a black-box dance generator.
+visible and editable, because inspecting and adjusting the mapping is what
+separates this system from a black-box dance generator.
 
 Run:
     streamlit run app.py
@@ -22,7 +22,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-import numpy as np
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -51,219 +51,329 @@ STUDY_DIR = PROJECT_DIR / "outputs" / "user_study"
 STUDY_DIR.mkdir(parents=True, exist_ok=True)
 
 ACCENT = "#6C5CE7"
-ACCENT_2 = "#00B8D9"
+MUTED = "#6A7085"
 
 CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Fraunces:ital,opsz,wght@0,9..144,600;1,9..144,500&display=swap');
 
 :root {
-    --ink: #1B1F3B;
-    --muted: #6B7280;
-    --line: #E6E8F0;
-    --card: #FFFFFF;
+    --ink: #101426;
+    --muted: #6A7085;
+    --line: #E6E3DA;
+    --paper: #F7F6F2;
     --accent: #6C5CE7;
     --accent-2: #00B8D9;
+    --gold: #C89B52;
 }
 
 html, body, .stApp, [data-testid="stAppViewContainer"] {
-    font-family: 'Inter', -apple-system, 'Segoe UI', system-ui, sans-serif;
+    font-family: 'Manrope', -apple-system, 'Segoe UI', system-ui, sans-serif;
     color: var(--ink);
+    -webkit-font-smoothing: antialiased;
 }
 
 [data-testid="stAppViewContainer"] {
     background:
-        radial-gradient(1200px 500px at 8% -8%, rgba(108, 92, 231, 0.14), transparent 60%),
-        radial-gradient(900px 420px at 100% 0%, rgba(0, 184, 217, 0.10), transparent 55%),
-        #F6F7FB;
+        radial-gradient(1100px 520px at 4% -10%, rgba(108, 92, 231, 0.10), transparent 62%),
+        radial-gradient(900px 480px at 100% 0%, rgba(0, 184, 217, 0.08), transparent 58%),
+        radial-gradient(700px 400px at 60% 110%, rgba(200, 155, 82, 0.07), transparent 60%),
+        var(--paper);
 }
 
 [data-testid="stHeader"] { background: transparent; }
 
 .block-container {
-    max-width: 1240px;
-    padding-top: 1.6rem;
-    padding-bottom: 4rem;
+    max-width: 1180px;
+    padding-top: 1.5rem;
+    padding-bottom: 4.5rem;
 }
 
-h1, h2, h3, h4 { letter-spacing: -0.02em; color: var(--ink); }
-h1 { font-weight: 800; }
-h2 { font-weight: 700; margin-top: 0.6rem; }
-h3 { font-weight: 700; }
+h1, h2, h3, h4 { color: var(--ink); letter-spacing: -0.025em; }
+h2 { font-weight: 750; margin-top: 0.5rem; }
+h3 { font-weight: 700; font-size: 1.05rem; }
 
-/* ---------- sidebar ---------- */
+/* ---------------- sidebar ---------------- */
 section[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #151A32 0%, #10142A 100%);
+    background:
+        radial-gradient(500px 300px at 20% -8%, rgba(108, 92, 231, 0.30), transparent 65%),
+        radial-gradient(420px 260px at 110% 30%, rgba(0, 184, 217, 0.16), transparent 60%),
+        linear-gradient(180deg, #0C0F1E 0%, #0A0C18 100%);
     border-right: 1px solid rgba(255,255,255,0.06);
 }
-section[data-testid="stSidebar"] * { color: #E9ECF8; }
-section[data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] > div,
-section[data-testid="stSidebar"] .stTextInput input,
-section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {
+section[data-testid="stSidebar"] * { color: #EDEEF7; }
+section[data-testid="stSidebar"] .stSelectbox div[role="group"] { background: transparent !important; }
+section[data-testid="stSidebar"] .stSelectbox input[role="combobox"] {
     background: rgba(255,255,255,0.07) !important;
-    border: 1px solid rgba(255,255,255,0.16) !important;
-    border-radius: 10px !important;
-    color: #F2F4FF !important;
+    border: 1px solid rgba(255,255,255,0.14) !important;
+    border-radius: 11px !important;
+    color: #EDEEF7 !important;
+    padding: 0.5rem 0.7rem !important;
+    font-weight: 600 !important;
+}
+section[data-testid="stSidebar"] .stSelectbox button {
+    background: transparent !important; color: #B9BFD8 !important; border: none !important;
+}
+section[data-testid="stSidebar"] [data-testid="stExpander"] details {
+    background: rgba(255,255,255,0.05) !important;
+    border: 1px solid rgba(255,255,255,0.12) !important;
+    box-shadow: none !important;
+}
+section[data-testid="stSidebar"] [data-testid="stExpander"] summary,
+section[data-testid="stSidebar"] [data-testid="stExpander"] summary * {
+    color: #E9ECF8 !important;
+}
+section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] button {
+    background-image: linear-gradient(135deg, #6C5CE7, #8B7CF6) !important;
+    background-color: #6C5CE7 !important;
+    color: #FFFFFF !important; border: none !important; border-radius: 9px !important;
+    font-weight: 650 !important;
+}
+section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {
+    background: rgba(255,255,255,0.04) !important;
+    border: 1px dashed rgba(255,255,255,0.22) !important;
+    border-radius: 14px !important;
+}
+section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] section,
+section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] > div,
+section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] div {
+    background: transparent !important;
 }
 section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] small,
-section[data-testid="stSidebar"] .stCaption, section[data-testid="stSidebar"] small {
-    color: #B7BEDC !important;
-}
-section[data-testid="stSidebar"] hr { border-color: rgba(255,255,255,0.12); }
-section[data-testid="stSidebar"] .stSlider [data-baseweb="slider"] div { color: #E9ECF8; }
+section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] span,
+section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] p { color: #AEB4CE !important; }
+section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] small,
+section[data-testid="stSidebar"] .stCaption, section[data-testid="stSidebar"] small { color: #AEB4CE !important; }
+section[data-testid="stSidebar"] hr { border-color: rgba(255,255,255,0.10); }
+section[data-testid="stSidebar"] .stCheckbox label p { color: #E6E8F5 !important; }
+section[data-testid="stSidebar"] [data-baseweb="select"] svg { fill: #B9BFD8 !important; }
 
-.brand {
-    display: flex; align-items: center; gap: 0.7rem;
-    padding: 0.2rem 0 1rem 0;
-}
+.brand { display: flex; align-items: center; gap: 0.75rem; padding: 0.1rem 0 1.15rem 0; }
 .brand-mark {
-    width: 42px; height: 42px; border-radius: 13px;
-    display: grid; place-items: center; font-size: 1.25rem;
-    background: linear-gradient(135deg, #6C5CE7, #00B8D9);
-    box-shadow: 0 8px 20px rgba(108, 92, 231, 0.35);
+    width: 44px; height: 44px; border-radius: 14px; position: relative;
+    display: grid; place-items: center; font-size: 1.2rem; color: #fff;
+    background: linear-gradient(145deg, #7C6BF0, #00B8D9);
+    box-shadow: 0 10px 24px rgba(108, 92, 231, 0.45), inset 0 1px 0 rgba(255,255,255,0.35);
 }
-.brand-name { font-weight: 800; font-size: 1.05rem; letter-spacing: -0.02em; line-height: 1.1; }
-.brand-sub { font-size: 0.72rem; color: #A8B0D3; letter-spacing: 0.06em; text-transform: uppercase; }
+.brand-name { font-weight: 800; font-size: 1.02rem; letter-spacing: -0.02em; line-height: 1.15; }
+.brand-sub { font-size: 0.68rem; color: #9AA1BE; letter-spacing: 0.16em; text-transform: uppercase; margin-top: 2px; }
 
-/* ---------- hero ---------- */
+.side-label {
+    font-size: 0.66rem; letter-spacing: 0.18em; text-transform: uppercase;
+    color: #8C93B0; font-weight: 700; margin: 0.2rem 0 0.35rem 0;
+}
+
+/* ---------------- hero ---------------- */
 .hero {
-    position: relative;
-    border-radius: 22px;
-    padding: 1.7rem 1.9rem 1.55rem 1.9rem;
+    position: relative; overflow: hidden; border-radius: 24px;
+    padding: 1.85rem 2rem 1.65rem 2rem;
     background:
-        radial-gradient(700px 240px at 100% 0%, rgba(0, 184, 217, 0.35), transparent 60%),
-        linear-gradient(120deg, #1B1F3B 0%, #2A2F66 55%, #4B3FA8 100%);
+        radial-gradient(680px 260px at 96% -10%, rgba(0, 184, 217, 0.35), transparent 60%),
+        radial-gradient(520px 280px at 0% 110%, rgba(200, 155, 82, 0.20), transparent 60%),
+        linear-gradient(118deg, #0E1122 0%, #191E3D 52%, #3A2E86 100%);
     color: #FFFFFF;
-    box-shadow: 0 24px 60px rgba(27, 31, 59, 0.28);
-    overflow: hidden;
+    box-shadow: 0 30px 70px -24px rgba(16, 20, 38, 0.55);
+}
+.hero:before {
+    content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0.15;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    mix-blend-mode: overlay;
 }
 .hero:after {
-    content: ""; position: absolute; right: -60px; bottom: -90px;
-    width: 260px; height: 260px; border-radius: 50%;
-    background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.18), transparent 62%);
+    content: ""; position: absolute; right: -90px; bottom: -130px; width: 320px; height: 320px;
+    border-radius: 50%; border: 1px solid rgba(255,255,255,0.12);
+    background: radial-gradient(circle at 35% 35%, rgba(255,255,255,0.12), transparent 62%);
 }
+.hero-grid { position: relative; z-index: 2; display: flex; justify-content: space-between; gap: 2rem; }
 .kicker {
-    font-size: 0.72rem; letter-spacing: 0.18em; text-transform: uppercase;
-    color: #C9C3FF; font-weight: 700; margin-bottom: 0.45rem;
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    font-size: 0.68rem; letter-spacing: 0.22em; text-transform: uppercase;
+    color: #C7C2FF; font-weight: 700; margin-bottom: 0.55rem;
 }
+.kicker .dot { width: 6px; height: 6px; border-radius: 50%; background: #00E0C6; box-shadow: 0 0 12px #00E0C6; }
 .hero h1 {
-    color: #FFFFFF; font-size: 2.15rem; margin: 0 0 0.35rem 0; line-height: 1.12;
+    color: #FFFFFF; font-size: 2.55rem; line-height: 1.05; margin: 0 0 0.5rem 0;
+    font-weight: 800; letter-spacing: -0.035em;
 }
-.hero p { color: #D7DAF2; font-size: 0.98rem; margin: 0; max-width: 780px; }
-.chips { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.95rem; }
+.hero h1 em { font-family: 'Fraunces', Georgia, serif; font-style: italic; font-weight: 500; color: #D9D4FF; }
+.hero p { color: rgba(228, 230, 250, 0.82); font-size: 0.95rem; line-height: 1.55; max-width: 640px; margin: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 1.1rem; }
 .chip {
-    display: inline-flex; align-items: center; gap: 0.35rem;
-    padding: 0.3rem 0.7rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600;
-    background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.18);
-    color: #F3F4FF;
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.34rem 0.75rem; border-radius: 999px; font-size: 0.74rem; font-weight: 650;
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14);
+    color: #F4F4FF; backdrop-filter: blur(6px);
+}
+.chip svg { width: 12px; height: 12px; opacity: 0.85; }
+
+.eq { display: flex; align-items: flex-end; gap: 5px; height: 74px; margin-top: 0.4rem; }
+.eq span {
+    width: 7px; border-radius: 4px; background: linear-gradient(180deg, #00E0C6, #6C5CE7);
+    opacity: 0.9; animation: pulse 1.1s ease-in-out infinite;
+}
+.eq span:nth-child(1) { height: 26px; animation-delay: 0s; }
+.eq span:nth-child(2) { height: 52px; animation-delay: .12s; }
+.eq span:nth-child(3) { height: 38px; animation-delay: .24s; }
+.eq span:nth-child(4) { height: 66px; animation-delay: .36s; }
+.eq span:nth-child(5) { height: 44px; animation-delay: .48s; }
+.eq span:nth-child(6) { height: 58px; animation-delay: .60s; }
+.eq span:nth-child(7) { height: 30px; animation-delay: .72s; }
+@keyframes pulse { 0%, 100% { transform: scaleY(0.55); } 50% { transform: scaleY(1); } }
+
+/* ---------------- cards ---------------- */
+[data-testid="stVerticalBlockBorderWrapper"] {
+    border: 1px solid transparent !important;
+    border-radius: 18px !important;
+    background:
+        linear-gradient(#FFFFFF, #FFFFFF) padding-box,
+        linear-gradient(135deg, rgba(108,92,231,0.30), rgba(0,184,217,0.16) 45%, rgba(200,155,82,0.22)) border-box !important;
+    box-shadow: 0 1px 2px rgba(16,20,38,0.05), 0 18px 44px -20px rgba(16,20,38,0.30) !important;
+    padding: 1.15rem 1.2rem !important;
 }
 
-/* ---------- cards ---------- */
-[data-testid="stVerticalBlockBorderWrapper"] {
-    background: var(--card);
-    border: 1px solid var(--line) !important;
-    border-radius: 16px !important;
-    box-shadow: 0 8px 24px rgba(27, 31, 59, 0.05);
-    padding: 1.1rem 1.15rem;
+.sec { display: flex; align-items: center; gap: 0.7rem; margin: 0.1rem 0 0.1rem 0; }
+.sec-ico {
+    width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center;
+    background: linear-gradient(145deg, #F1EEFF, #E7F8FF);
+    border: 1px solid #E4E0FF; font-size: 0.95rem;
 }
-.section-title {
-    display: flex; align-items: baseline; gap: 0.55rem;
-    margin: 0.2rem 0 0.15rem 0;
-}
-.section-title .t { font-size: 1.12rem; font-weight: 700; color: var(--ink); }
-.section-title .h { font-size: 0.82rem; color: var(--muted); }
-.section-rule { height: 2px; width: 46px; border-radius: 2px; margin: 0.35rem 0 0.9rem 0;
-    background: linear-gradient(90deg, #6C5CE7, #00B8D9); }
+.sec-t { font-size: 1.02rem; font-weight: 750; letter-spacing: -0.015em; }
+.sec-h { font-size: 0.76rem; color: var(--muted); margin-top: 1px; }
+.rule { height: 3px; width: 54px; border-radius: 99px; margin: 0.5rem 0 0.9rem 0;
+    background: linear-gradient(90deg, #6C5CE7, #00B8D9 60%, transparent); }
 
 [data-testid="stMetric"] {
-    background: var(--card);
+    background: #FFFFFF;
     border: 1px solid var(--line);
-    border-radius: 14px;
-    padding: 0.85rem 1rem;
-    box-shadow: 0 6px 18px rgba(27, 31, 59, 0.04);
+    border-radius: 16px;
+    padding: 0.9rem 1rem 0.85rem 1rem;
+    box-shadow: 0 12px 30px -22px rgba(16,20,38,0.45);
+    position: relative; overflow: hidden;
 }
-[data-testid="stMetricLabel"] p { color: var(--muted); font-size: 0.78rem; font-weight: 600;
-    letter-spacing: 0.03em; text-transform: uppercase; }
-[data-testid="stMetricValue"] { color: var(--ink); font-weight: 750; }
+[data-testid="stMetric"]:before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: linear-gradient(180deg, #6C5CE7, #00B8D9);
+}
+[data-testid="stMetricLabel"] p {
+    color: var(--muted); font-size: 0.68rem; font-weight: 750;
+    letter-spacing: 0.14em; text-transform: uppercase;
+}
+[data-testid="stMetricValue"] {
+    color: var(--ink); font-weight: 800; font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+}
 
-/* ---------- tabs ---------- */
-.stTabs [data-baseweb="tab-list"] {
-    gap: 0.35rem; background: rgba(255,255,255,0.75);
-    padding: 0.35rem; border-radius: 14px; border: 1px solid var(--line);
-    box-shadow: 0 6px 18px rgba(27, 31, 59, 0.04);
+/* ---------------- tabs ---------------- */
+/* ---------------- tabs (Streamlit 1.66 react-aria markup) ---------------- */
+.stTabs [role="tablist"] {
+    gap: 0.3rem; background: rgba(255,255,255,0.72);
+    padding: 0.32rem; border-radius: 16px; border: 1px solid var(--line);
+    box-shadow: 0 10px 30px -22px rgba(16,20,38,0.6);
+    backdrop-filter: blur(8px);
 }
-.stTabs [data-baseweb="tab"] {
-    height: 40px; border-radius: 10px; padding: 0 1rem;
-    font-weight: 600; color: #5A6079; background: transparent;
+.stTabs [data-testid="stTab"] {
+    height: 44px; border-radius: 12px; padding: 0 1.1rem;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 650; color: #5B6178; background: transparent;
+    transition: all 0.18s ease;
 }
-.stTabs [aria-selected="true"] {
-    background: linear-gradient(135deg, #6C5CE7, #7C6BF0);
-    color: #FFFFFF !important;
-    box-shadow: 0 6px 14px rgba(108, 92, 231, 0.30);
+.stTabs [data-testid="stTab"] p {
+    font-size: 0.88rem; font-weight: 650; color: inherit; margin: 0;
 }
-.stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"] { display: none; }
+.stTabs [data-testid="stTab"]:hover { color: #3A2E86; background: rgba(108,92,231,0.06); }
+.stTabs [data-testid="stTab"][aria-selected="true"] {
+    background: linear-gradient(135deg, #6C5CE7, #7E6CF2);
+    box-shadow: 0 8px 20px -8px rgba(108,92,231,0.75), inset 0 1px 0 rgba(255,255,255,0.25);
+}
+.stTabs [data-testid="stTab"][aria-selected="true"] p { color: #FFFFFF !important; }
+.stTabs .react-aria-SelectionIndicator, .stTabs [data-baseweb="tab-highlight"] { display: none !important; }
+[data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stAppDeployButton"], #MainMenu { display: none !important; }
 
-/* ---------- controls ---------- */
+/* ---------------- controls ---------------- */
 .stButton > button, [data-testid="stDownloadButton"] > button {
-    border-radius: 11px; font-weight: 650; padding: 0.5rem 1.05rem;
+    border-radius: 11px; font-weight: 650; font-size: 0.88rem; padding: 0.5rem 1.05rem;
     border: 1px solid var(--line); background: #FFFFFF; color: var(--ink);
-    transition: all 0.15s ease;
+    transition: transform 0.12s ease, box-shadow 0.18s ease, border-color 0.18s ease;
 }
 .stButton > button:hover, [data-testid="stDownloadButton"] > button:hover {
-    border-color: #C9C3FF; color: #4B3FA8; transform: translateY(-1px);
-    box-shadow: 0 8px 18px rgba(108, 92, 231, 0.15);
+    border-color: #C9C2F5; color: #3A2E86; transform: translateY(-1px);
+    box-shadow: 0 12px 26px -14px rgba(108,92,231,0.55);
 }
+.stButton > button:active { transform: translateY(0); }
 .stButton > button[kind="primary"] {
     background: linear-gradient(135deg, #6C5CE7, #8B7CF6);
     color: #FFFFFF; border: none;
-    box-shadow: 0 10px 22px rgba(108, 92, 231, 0.30);
+    box-shadow: 0 14px 30px -12px rgba(108,92,231,0.75), inset 0 1px 0 rgba(255,255,255,0.28);
 }
-.stButton > button[kind="primary"]:hover { box-shadow: 0 12px 26px rgba(108, 92, 231, 0.40); }
+.stButton > button[kind="primary"]:hover { box-shadow: 0 18px 36px -12px rgba(108,92,231,0.85); }
 
 [data-testid="stExpander"] details {
-    border: 1px solid var(--line); border-radius: 14px; background: #FFFFFF;
-    box-shadow: 0 6px 16px rgba(27, 31, 59, 0.04);
+    border: 1px solid var(--line); border-radius: 16px; background: #FFFFFF;
+    box-shadow: 0 12px 30px -24px rgba(16,20,38,0.5);
 }
-[data-testid="stExpander"] summary { font-weight: 600; }
+[data-testid="stExpander"] summary { font-weight: 650; }
 
-[data-testid="stDataFrame"] { border-radius: 14px; overflow: hidden; border: 1px solid var(--line); }
-[data-testid="stDataFrame"] * { font-family: 'Inter', system-ui, sans-serif; }
+[data-testid="stDataFrame"] {
+    border-radius: 14px; overflow: hidden; border: 1px solid var(--line);
+    background: #FFFFFF;
+}
+[data-testid="stDataFrame"] * { font-family: 'Manrope', system-ui, sans-serif; }
 
 .stProgress > div > div > div > div { background: linear-gradient(90deg, #6C5CE7, #00B8D9); }
 
-.empty {
-    border: 1px dashed #C9CBE0; border-radius: 16px; padding: 1.6rem;
-    text-align: center; color: var(--muted); background: rgba(255,255,255,0.6);
-}
-.empty .big { font-size: 1.7rem; margin-bottom: 0.35rem; }
+.stAudio audio { width: 100%; border-radius: 12px; }
 
-.note {
-    font-size: 0.82rem; color: var(--muted); line-height: 1.45;
+.empty {
+    border: 1px dashed #CFCBE0; border-radius: 18px; padding: 1.9rem 1.4rem;
+    text-align: center; color: var(--muted);
+    background: linear-gradient(180deg, rgba(255,255,255,0.85), rgba(250,249,246,0.65));
 }
+.empty .ring {
+    width: 54px; height: 54px; margin: 0 auto 0.7rem auto; border-radius: 50%;
+    display: grid; place-items: center; font-size: 1.35rem;
+    background: radial-gradient(circle at 30% 30%, #FFFFFF, #F0EDFF);
+    border: 1px solid #E2DDFF; box-shadow: 0 10px 24px -14px rgba(108,92,231,0.6);
+}
+.empty .big { font-weight: 750; color: var(--ink); margin-bottom: 0.25rem; font-size: 0.98rem; }
+.empty .note { font-size: 0.83rem; line-height: 1.5; }
+
+.note { font-size: 0.83rem; color: var(--muted); line-height: 1.55; }
 .pill {
-    display: inline-block; padding: 0.18rem 0.55rem; border-radius: 999px;
-    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.02em;
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    padding: 0.24rem 0.62rem; border-radius: 999px;
+    font-size: 0.72rem; font-weight: 750; letter-spacing: 0.02em;
+    border: 1px solid transparent;
 }
-.pill-ok { background: #E7F8EF; color: #14804A; }
-.pill-warn { background: #FFF4E5; color: #B25E09; }
-.pill-info { background: #EEF0FF; color: #4B3FA8; }
+.pill-ok { background: #E8F8F0; color: #12805A; border-color: #C6EEDB; }
+.pill-warn { background: #FFF4E4; color: #A96513; border-color: #F3DFBE; }
+.pill-info { background: #EEECFF; color: #4B3FA8; border-color: #DCD7FF; }
+
+.player { display: flex; align-items: center; gap: 0.9rem; }
+.disc {
+    width: 46px; height: 46px; border-radius: 50%; flex: 0 0 auto;
+    background:
+        radial-gradient(circle at 50% 50%, #0E1122 0 17%, transparent 17.5%),
+        repeating-radial-gradient(circle at 50% 50%, rgba(255,255,255,0.10) 0 1px, transparent 1px 4px),
+        conic-gradient(from 0deg, #1A1F3D, #2C2F58, #1A1F3D, #3A2E86, #1A1F3D);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12), 0 10px 22px -12px rgba(16,20,38,0.8);
+    animation: spin 14s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 footer { visibility: hidden; }
-section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] button {
-    background: linear-gradient(135deg, #6C5CE7, #8B7CF6) !important;
-    color: #FFFFFF !important; border: none !important; border-radius: 9px !important;
-}
-section[data-testid="stSidebar"] .stCheckbox label, section[data-testid="stSidebar"] .stCheckbox p {
-    color: #E9ECF8 !important;
-}
-section[data-testid="stSidebar"] [data-baseweb="select"] svg { fill: #C9CBE0 !important; }
-[data-testid="stSidebar"] .stSlider [data-baseweb="slider"] [role="slider"] { border-color: #8B7CF6 !important; }
-.stCaption, [data-testid="stCaptionContainer"] { color: #6B7280; }
-[data-testid="stMetricDelta"] svg { display: inline; }
 </style>
 """
 
 st.markdown(CSS, unsafe_allow_html=True)
+
+ICONS = {
+    "music": "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8'><path d='M9 18V5l12-2v13'/><circle cx='6' cy='18' r='3'/><circle cx='18' cy='16' r='3'/></svg>",
+    "layers": "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8'><path d='M12 2 2 7l10 5 10-5-10-5Z'/><path d='m2 17 10 5 10-5'/><path d='m2 12 10 5 10-5'/></svg>",
+    "play": "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8'><path d='m6 3 14 9-14 9V3Z'/></svg>",
+    "chart": "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8'><path d='M3 3v18h18'/><path d='m7 14 4-4 3 3 5-6'/></svg>",
+    "book": "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8'><path d='M4 19.5A2.5 2.5 0 0 1 6.5 17H20'/><path d='M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z'/></svg>",
+    "wave": "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8'><path d='M2 12h3l2-7 3 14 3-10 2 5h5'/></svg>",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -366,45 +476,75 @@ def render_video(run_dir: Path, audio_path: Path, mode: str) -> Path | None:
 
 
 # ---------------------------------------------------------------------------
-# Small UI components
+# UI components
 # ---------------------------------------------------------------------------
 
 def hero() -> None:
     st.markdown(
-        """
+        f"""
         <div class="hero">
-            <div class="kicker">CAT404 · Software Engineering Major Project</div>
-            <h1>MusicMotion Studio</h1>
-            <p>An interactive music-driven 3D character animation system built on multi-level musical
-            features — beat, tempo, energy, onset and structure mapped onto motion, rendered in Blender,
-            and measured with Beat Alignment Score.</p>
-            <div class="chips">
-                <span class="chip">◉ Multi-level mapping</span>
-                <span class="chip">◫ 16 737 motion clips</span>
-                <span class="chip">✧ Blender rendering</span>
-                <span class="chip">◎ BAS evaluation</span>
+          <div class="hero-grid">
+            <div>
+              <div class="kicker"><span class="dot"></span>CAT404 · Final Year Project</div>
+              <h1>MusicMotion <em>Studio</em></h1>
+              <p>An interpretable music-driven 3D character animation system. Beat, tempo, energy,
+              onset and structure are mapped onto motion by explicit, editable rules — then rendered
+              in Blender and measured with Beat Alignment Score.</p>
+              <div class="chips">
+                <span class="chip">{ICONS['layers']} Multi-level mapping</span>
+                <span class="chip">{ICONS['wave']} 16 737 motion clips</span>
+                <span class="chip">{ICONS['play']} Blender rendering</span>
+                <span class="chip">{ICONS['chart']} BAS evaluation</span>
+              </div>
             </div>
+            <div style="display:flex;align-items:flex-end">
+              <div class="eq"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+            </div>
+          </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
 
-def section(icon: str, title: str, hint: str = "") -> None:
-    hint_html = f"<span class='h'>{hint}</span>" if hint else ""
+def section(icon_key: str, title: str, hint: str = "") -> None:
+    hint_html = f"<div class='sec-h'>{hint}</div>" if hint else ""
     st.markdown(
-        f"<div class='section-title'><span class='t'>{icon} {title}</span>{hint_html}</div>"
-        "<div class='section-rule'></div>",
+        f"""
+        <div class="sec">
+          <div class="sec-ico">{ICONS.get(icon_key, '')}</div>
+          <div><div class="sec-t">{title}</div>{hint_html}</div>
+        </div>
+        <div class="rule"></div>
+        """,
         unsafe_allow_html=True,
     )
 
 
 def empty_state(icon: str, title: str, text: str) -> None:
     st.markdown(
-        f"<div class='empty'><div class='big'>{icon}</div>"
-        f"<div style='font-weight:700;color:#1B1F3B;margin-bottom:.25rem'>{title}</div>"
-        f"<div class='note'>{text}</div></div>",
+        f"""
+        <div class="empty">
+          <div class="ring">{icon}</div>
+          <div class="big">{title}</div>
+          <div class="note">{text}</div>
+        </div>
+        """,
         unsafe_allow_html=True,
+    )
+
+
+def pill(text: str, kind: str = "info") -> str:
+    return f"<span class='pill pill-{kind}'>{text}</span>"
+
+
+def altair_theme(chart, height: int = 240):
+    return (
+        chart.properties(height=height)
+        .configure_view(stroke=None)
+        .configure_axis(grid=False, domain=False, ticks=False,
+                        labelColor=MUTED, labelFontSize=10, titleColor=MUTED)
+        .configure(background="transparent")
     )
 
 
@@ -412,8 +552,8 @@ def rules_from_sidebar(base: dict, mode: str) -> dict:
     rules = json.loads(json.dumps(base))
     rules["mode"] = mode
 
-    st.sidebar.markdown("#### Mapping weights")
-    st.sidebar.caption("Every value below is part of the mapping that will be recorded in the run.")
+    st.sidebar.markdown("<div class='side-label'>Mapping weights</div>", unsafe_allow_html=True)
+    st.sidebar.caption("Every value is recorded with the run.")
 
     rules["slot_beats"] = st.sidebar.slider("Beats per motion slot", 1, 4, int(base.get("slot_beats", 2)))
 
@@ -471,13 +611,13 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-    st.markdown("#### Music input")
+    st.markdown("<div class='side-label'>Music input</div>", unsafe_allow_html=True)
     uploaded = st.file_uploader("Upload a WAV file", type=["wav"], label_visibility="collapsed")
     demos = sorted(path.name for path in paths.audio_files())
     demo_choice = st.selectbox("or use a bundled song", demos, index=0 if demos else None)
 
     st.divider()
-    st.markdown("#### Mapping mode")
+    st.markdown("<div class='side-label'>Mapping mode</div>", unsafe_allow_html=True)
     mode = st.selectbox(
         "Mapping mode",
         options=list(mapping.MODES),
@@ -492,10 +632,7 @@ with st.sidebar:
             "no_structure": "Ablation · no structure",
         }[value],
     )
-    st.caption(
-        "All conditions share the same motion library, retrieval, blending and interface — "
-        "only the active mapping layers differ."
-    )
+    st.caption("All conditions share the same library, blending and interface.")
 
     rules = rules_from_sidebar(BASE_RULES, mode)
 
@@ -519,20 +656,26 @@ if audio_path is None or not audio_path.exists():
 # ---------------------------------------------------------------------------
 
 st.write("")
-song_col, audio_col = st.columns([2.1, 1.0], gap="large")
-with song_col:
-    st.markdown(
-        f"""
-        <div class="note" style="text-transform:uppercase;letter-spacing:.12em;font-weight:700;color:#6B7280">
-            Now working on
-        </div>
-        <div style="font-size:1.35rem;font-weight:800;color:#1B1F3B;line-height:1.2">{audio_path.name}</div>
-        <div class="note" style="margin-top:.2rem">Mode: <b>{mode}</b> · mapping rules editable in the sidebar</div>
-        """,
-        unsafe_allow_html=True,
-    )
-with audio_col:
-    st.audio(str(audio_path))
+with st.container(border=True):
+    info_col, audio_col = st.columns([1.7, 1.0], gap="large")
+    with info_col:
+        st.markdown(
+            f"""
+            <div class="player">
+              <div class="disc"></div>
+              <div>
+                <div class="note" style="text-transform:uppercase;letter-spacing:.16em;font-weight:750;color:#6A7085">
+                    Now working on
+                </div>
+                <div style="font-size:1.28rem;font-weight:800;letter-spacing:-.02em;line-height:1.25">{audio_path.name}</div>
+                <div style="margin-top:.35rem">{pill(mode, 'info')}&nbsp;{pill('rules editable', 'ok')}</div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with audio_col:
+        st.audio(str(audio_path))
 
 tabs = st.tabs([
     "① Music analysis",
@@ -548,11 +691,13 @@ tabs = st.tabs([
 # ---------------------------------------------------------------------------
 
 with tabs[0]:
-    section("🎼", "Musical analysis", "beat · tempo · energy · onset · structure")
+    section("music", "Musical analysis", "beat · tempo · energy · onset · structure")
 
-    if st.button("Re-analyse music", type="secondary"):
-        reset_results()
-        analyse(audio_path, refresh=True)
+    head_l, head_r = st.columns([1.0, 0.32])
+    with head_r:
+        if st.button("Re-analyse", type="secondary", width="stretch"):
+            reset_results()
+            analyse(audio_path, refresh=True)
 
     analysis = state("analysis")
     if analysis is None or state("analysis_key", (None,))[1] != str(audio_path):
@@ -566,6 +711,7 @@ with tabs[0]:
 
     st.write("")
     with st.container(border=True):
+        section("wave", "Feature overview", "waveform · RMS · onset · sections")
         plot_path = paths.feature_dir(audio_path) / "feature_plot.png"
         if plot_path.exists():
             st.image(str(plot_path), width="stretch")
@@ -579,7 +725,7 @@ with tabs[0]:
     left, right = st.columns([1.15, 1.0], gap="large")
     with left:
         with st.container(border=True):
-            section("▤", "Sections", "energy rank drives the motion family")
+            section("layers", "Sections", "energy rank drives the motion family")
             if analysis.sections:
                 st.dataframe(
                     pd.DataFrame(analysis.sections)[
@@ -592,11 +738,9 @@ with tabs[0]:
                 st.caption("No section boundaries were detected in this track.")
     with right:
         with st.container(border=True):
-            section("◷", "Beat features", "the table the mapping actually consumes")
+            section("chart", "Beat features", "the table the mapping consumes")
             st.dataframe(
-                analysis.beats[[
-                    "beat_time", "bpm_local", "energy_norm", "onset_norm", "section_label"
-                ]].round(3),
+                analysis.beats[["beat_time", "bpm_local", "energy_norm", "onset_norm", "section_label"]].round(3),
                 width="stretch",
                 hide_index=True,
                 height=300,
@@ -608,7 +752,7 @@ with tabs[0]:
 # ---------------------------------------------------------------------------
 
 with tabs[1]:
-    section("🗺", "Music-to-motion mapping", "one clip decision per musical phrase")
+    section("layers", "Music-to-motion mapping", "one clip decision per musical phrase")
 
     st.caption(
         "Each row is a phrase slot of two beats. The beat grid fixes when movement happens; tempo, "
@@ -636,7 +780,7 @@ with tabs[1]:
 
         st.write("")
         with st.container(border=True):
-            section("▦", "Slot decisions", f"{len(plan.plan)} slots · mode {mode}")
+            section("layers", "Slot decisions", f"{len(plan.plan)} slots · mode {mode}")
             st.dataframe(
                 plan.plan[[
                     "slot", "start_time", "end_time", "bpm", "rate", "gain",
@@ -646,21 +790,59 @@ with tabs[1]:
                 width="stretch",
                 hide_index=True,
                 height=360,
+                column_config={
+                    "start_time": st.column_config.NumberColumn("start (s)", format="%.2f"),
+                    "end_time": st.column_config.NumberColumn("end (s)", format="%.2f"),
+                    "bpm": st.column_config.NumberColumn("BPM", format="%.1f"),
+                    "rate": st.column_config.NumberColumn("rate", format="%.2f"),
+                    "gain": st.column_config.NumberColumn("gain", format="%.2f"),
+                    "blend_seconds": st.column_config.NumberColumn("blend (s)", format="%.2f"),
+                    "energy_target": st.column_config.NumberColumn("energy", format="%.2f"),
+                    "clip_tempo_bpm": st.column_config.NumberColumn("clip BPM", format="%.0f"),
+                },
             )
 
         chart_col, info_col = st.columns([1.6, 1.0], gap="large")
         with chart_col:
             with st.container(border=True):
-                section("📈", "Intensity over time", "gain, playback rate and blend length")
-                st.line_chart(
-                    plan.plan.set_index("start_time")[["gain", "rate"]],
-                    height=260,
-                    color=["#6C5CE7", "#00B8D9"],
+                section("chart", "Intensity over time", "gain and playback rate per slot")
+                chart_df = plan.plan[["start_time", "gain", "rate"]].rename(
+                    columns={"start_time": "time"}
                 )
+                base = alt.Chart(chart_df).encode(x=alt.X("time:Q", title=None))
+                area = base.mark_area(
+                    line={"color": ACCENT, "strokeWidth": 2.2},
+                    color=alt.Gradient(
+                        gradient="linear",
+                        stops=[
+                            alt.GradientStop(color="rgba(108,92,231,0.34)", offset=0),
+                            alt.GradientStop(color="rgba(108,92,231,0.02)", offset=1),
+                        ],
+                        x1=1, x2=1, y1=1, y2=0,
+                    ),
+                ).encode(y=alt.Y("gain:Q", title="gain", scale=alt.Scale(zero=False)))
+                line = base.mark_line(color="#00B8D9", strokeWidth=1.8, strokeDash=[5, 3]).encode(
+                    y=alt.Y("rate:Q", title="rate", scale=alt.Scale(zero=False))
+                )
+                chart = alt.layer(area, line).resolve_scale(y="independent")
+                st.altair_chart(altair_theme(chart, 250), width="stretch")
         with info_col:
             with st.container(border=True):
-                section("◎", "Plan summary", "stored with the run")
-                st.write(plan.summary.get("genre_distribution", {}))
+                section("chart", "Plan summary", "stored with the run")
+                genres = pd.Series(plan.summary.get("genre_distribution", {})).sort_values()
+                if len(genres):
+                    genre_df = genres.rename_axis("genre").reset_index(name="clips")
+                    bars = (
+                        alt.Chart(genre_df)
+                        .mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5,
+                                  color="#6C5CE7", size=14)
+                        .encode(
+                            x=alt.X("clips:Q", title=None, axis=alt.Axis(tickMinStep=1)),
+                            y=alt.Y("genre:N", title=None, sort="-x"),
+                            tooltip=["genre", "clips"],
+                        )
+                    )
+                    st.altair_chart(altair_theme(bars, 170), width="stretch")
                 st.caption(
                     f"Mean rate {plan.summary['mean_rate']:.2f}× · "
                     f"mean gain {plan.summary['mean_gain']:.2f}× · "
@@ -692,7 +874,7 @@ with tabs[1]:
 # ---------------------------------------------------------------------------
 
 with tabs[2]:
-    section("🎬", "Motion generation", "Slerp blending · DTW alignment · ground correction")
+    section("play", "Motion generation", "Slerp blending · DTW alignment · ground correction")
 
     col_a, col_b = st.columns([1.0, 1.0], gap="large")
     with col_a:
@@ -711,9 +893,8 @@ with tabs[2]:
                 st.exception(error)
     with col_b:
         st.markdown(
-            "<div class='note'>The motion is assembled in direction space: clips are time-warped, "
-            "scaled by the energy gain and blended with spherical interpolation. A ground pass keeps "
-            "the feet on the floor.</div>",
+            "<div class='note'>Clips are time-warped, scaled by the energy gain and blended with "
+            "spherical interpolation; a ground pass keeps the feet on the floor.</div>",
             unsafe_allow_html=True,
         )
 
@@ -731,7 +912,7 @@ with tabs[2]:
 
         st.write("")
         with st.container(border=True):
-            section("🖼", "Pose preview", "eight sampled frames and the motion-energy curve")
+            section("wave", "Pose preview", "eight sampled frames and the motion-energy curve")
             preview = state("preview")
             if preview and Path(preview).exists():
                 st.image(preview, width="stretch")
@@ -747,7 +928,7 @@ with tabs[2]:
 
         st.write("")
         with st.container(border=True):
-            section("🎞", "Blender character render", "rigged mannequin, soundtrack muxed into the MP4")
+            section("play", "Blender character render", "rigged mannequin, soundtrack muxed into the MP4")
             st.caption("Rendering takes several minutes; the rest of the interface stays usable afterwards.")
             if st.button("Render with Blender", type="primary"):
                 path = render_video(Path(motion_dir), audio_path, mode)
@@ -770,7 +951,7 @@ with tabs[2]:
 # ---------------------------------------------------------------------------
 
 with tabs[3]:
-    section("📊", "Beat-only vs multi-level", "same library, same pipeline, different mapping")
+    section("chart", "Beat-only vs multi-level", "same library, same pipeline, different mapping")
 
     st.caption(
         "Both conditions run on this song with identical retrieval, blending and interface settings. "
@@ -804,24 +985,35 @@ with tabs[3]:
         table_col, chart_col = st.columns([1.15, 1.0], gap="large")
         with table_col:
             with st.container(border=True):
-                section("▤", "Metrics", "beat alignment and expressiveness")
+                section("chart", "Metrics", "beat alignment and expressiveness")
                 st.dataframe(comparison, width="stretch")
                 delta = comparison.loc["multi_level"] - comparison.loc["beat_only"]
                 st.markdown("**Multi-level minus beat-only**")
                 st.dataframe(delta.round(3).to_frame().T, width="stretch")
         with chart_col:
             with st.container(border=True):
-                section("📈", "Side-by-side", "higher is better for all four metrics")
-                chart_df = comparison.T.reset_index().rename(columns={"index": "metric"})
-                st.bar_chart(
-                    chart_df.set_index("metric"),
-                    height=280,
-                    color=["#9AA0B5", "#6C5CE7"],
+                section("chart", "Side-by-side", "higher is better for all four metrics")
+                melted = comparison.T.reset_index().rename(columns={"index": "metric"})
+                melted = melted.melt(id_vars="metric", var_name="condition", value_name="value")
+                bars = (
+                    alt.Chart(melted)
+                    .mark_bar(cornerRadiusTopLeft=6, cornerRadiusTopRight=6)
+                    .encode(
+                        x=alt.X("metric:N", title=None, axis=alt.Axis(labelAngle=0)),
+                        xOffset="condition:N",
+                        y=alt.Y("value:Q", title=None),
+                        color=alt.Color(
+                            "condition:N",
+                            scale=alt.Scale(range=["#CFC9EE", "#6C5CE7"]),
+                            legend=alt.Legend(orient="top", title=None),
+                        ),
+                    )
                 )
+                st.altair_chart(altair_theme(bars, 270), width="stretch")
 
     st.write("")
     with st.container(border=True):
-        section("🎚", "Blind A/B rating", "user study · saved to outputs/user_study/responses.csv")
+        section("book", "Blind A/B rating", "saved to outputs/user_study/responses.csv")
         existing = sorted((PROJECT_DIR / "outputs").glob("runs/*/character_*.mp4"))
         options = [str(path.relative_to(PROJECT_DIR)) for path in existing] or ["(no rendered clip yet)"]
 
@@ -860,7 +1052,7 @@ with tabs[3]:
 # ---------------------------------------------------------------------------
 
 with tabs[4]:
-    section("📚", "How the system maps music to motion", "the five rules, the pipeline and the artifacts")
+    section("book", "How the system maps music to motion", "the five rules, the pipeline and the artifacts")
 
     with st.container(border=True):
         st.markdown(
